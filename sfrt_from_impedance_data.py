@@ -242,8 +242,13 @@ def cauer_decomp(n,d):
       
     else:
         raise Exception("Order of numerator and denominator must differ by 1")            
-    assert (array(Ls)>0).all(), "Inductor values are not all positive"
-    assert (array(Cs)>0).all(), "Capacitance values are not all positive"
+#    assert (array(Ls)>0).all(), "Inductor values are not all positive"
+        if not (array(Ls)>0).all():
+            print "Inductor values are not all positive"
+
+#    assert (array(Cs)>0).all(), "Capacitance values are not all positive"
+        if not (array(Cs)>0).all():
+            print "Capacitance values are not all positive"
     return(circuittype,Ls,Cs,R)
         
 def circuit_tikz_code(circuittype,Ls,Cs):
@@ -403,17 +408,33 @@ def Z22(omega,circuittype,Ls,Cs,R):
     Ztot=abcd[:,0,0]/abcd[:,1,0]
     return(Ztot)
 
+def ReportPhysicalCircuitParams(nomcenter,Z0,Ls, Cs, R):
+    Ls_physical=array(Ls)/nomcenter
+    Cs_physical=array(Cs)/nomcenter
+    R_physical=R*Z0
+    
+    print "-"*50
+    print "Physical circuit paramaters in matching network"
+    print "Ls: ",Ls_physical
+    print "Cs: ",Cs_physical
+    print "R: ",R_physical
+    print "-"*50
+    
+    return(Ls_physical,Cs_physical,R_physical)
+    
+    
+
 if __name__=='__main__':
     ##Sanity Checks
     #htest=poly1d([1,2,1,0])
     #gtest=Hurwitzpoly_g(htest,0,verbose=True)
     #print "gtest=" , gtest.coeffs
-    ##gtest should be g(p) = p^3 + 2.6494p^2 + 2.5098p + 1.
+    #gtest should be g(p) = p^3 + 2.6494p^2 + 2.5098p + 1.
     #
     #htest=poly1d([5,3,1,0.5,1,0])
     #gtest=Hurwitzpoly_g(htest,0,verbose=True)
     #print "gtest=" , gtest.coeffs
-    ##gtest should be g(p) = [5,12.15,14.86,10.71,4.73,1]
+    #gtest should be g(p) = [5,12.15,14.86,10.71,4.73,1]
     #
     ##k=3
     #htest=poly1d([1,-2,1,-0,1,-1,-1.1,3,1,-1,1])
@@ -435,7 +456,7 @@ if __name__=='__main__':
     nopt=100
     ntr=0
     k=0
-    T0=0.95
+    T0=1.0
     passband=[0.9,1.5]
     
     #****************************
@@ -471,9 +492,9 @@ if __name__=='__main__':
     #Calculate T for no matching network
     T=gain(w,poly1d(1),poly1d(1),k,L11)
     
-    order=8
+    order=5
         
-    try_all_bit_patterns=False
+    try_all_bit_patterns=True
     if try_all_bit_patterns:
         from bitstring import BitArray
         figure(13)
@@ -484,26 +505,34 @@ if __name__=='__main__':
         sos=zeros(2**order)
     
         for i in range(0,2**order):
+            print "-"*50
             ba=sign(array(list(BitArray(uint=i,length=order)),dtype='float64')-0.5)
             hin=poly1d(sign(array(list(ba),dtype='float64')-0.5))
             print hin
             #Least squares solution
             print "Performing least-squares optimization..."
             sol,cov_x,infodict,mesg,ier=leastsq(sopt,hin.coeffs,maxfev=10000,args=(T0,ntr,k,nopt,w,reflection,passband),full_output=True)
-            sols.append(sol)    
-            print mesg
-            print "Error Code: %d" % ier
-            print "Solution is:", sol
-            print "Least squares sum=",sum(sopt(sol,T0,ntr,k,nopt,w,reflection,passband)**2)
+            #print mesg
+            #print "Error Code: %d" % ier
+            #print "Solution is:", sol
+            #print "Least squares sum=",sum(sopt(sol,T0,ntr,k,nopt,w,reflection,passband)**2)
             hbook=poly1d([-1.8884, -1.9863, -1.9372, -0.6279, -0.0468])
             gbook=Hurwitzpoly_g(hbook,k)
             hfit=poly1d(sol)
             gfit=Hurwitzpoly_g(hfit,k)
             sos[i]=sum(sopt(sol,T0,ntr,k,nopt,w,reflection,passband)**2)
             print "Least squares sum from book=",sum(sopt(hbook.coeffs,T0,ntr,k,nopt,w,reflection,passband)**2)
-            figure(13)
-            #plot(w,gain(w,hbook,gbook,k,L11),label="Book solution")
-            plot(f/1e6,gain(w,hfit,gfit,k,L11),label="%d" %i)
+            circuittype,Ls,Cs,R=cauer_decomp((gfit-hfit),(gfit+hfit))
+            if (array(Ls)>0).all() and (array(Cs)>0).all() and R>0:
+                print "Valid solution found!"
+                print "Ls: ", Ls
+                print "Cs: ", Cs
+                print "R: ",R
+                figure(13)
+                #plot(w,gain(w,hbook,gbook,k,L11),label="Book solution")
+                plot(f/1e6,gain(w,hfit,gfit,k,L11),label="%d" %i)
+                sols.append(sol)    
+            
         sol=sols[argmin(sos)]
         print "Best solution achieves sum of squares of ", sols[argmin(sos)]
         grid()
@@ -515,6 +544,7 @@ if __name__=='__main__':
     
     else:
         hin=poly1d([-1.94335442,1.11208621,-8.01659691,8.15526687,-9.11459217,16.75179636,-2.18424997,9.86945929])
+        #hin=poly1d(rand(order))
         sol,cov_x,infodict,mesg,ier=leastsq(sopt,hin.coeffs,maxfev=10000,args=(T0,ntr,k,nopt,w,reflection,passband),full_output=True)
     
     
@@ -609,6 +639,8 @@ if __name__=='__main__':
     
     #TODO - check and make sure that gain formula works.  Plug in the fit value os
     #E22.  Try to figure out that big resonance in the total impedance..
+    
+    ReportPhysicalCircuitParams(nomcenter,50.0,Ls,Cs,R)
     
     print "Optimization complete."
     
